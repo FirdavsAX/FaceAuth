@@ -1,8 +1,9 @@
 #root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
+  max-width: 1100px;
+  margin: 1.5rem auto;
+  padding: 1.5rem;
   text-align: center;
+  color: #eaeef3;
 }
 
 .logo {
@@ -33,10 +34,63 @@
   }
 }
 
-.card {
-  padding: 2em;
+.face-container {
+  position: relative;
+  width: 900px;
+  max-width: 100%;
+  margin: 1rem auto;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 12px 30px rgba(2, 6, 23, 0.6);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.02),
+    rgba(255, 255, 255, 0.01)
+  );
+}
+
+.video-el {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #000;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.overlay-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+h1 {
+  font-size: 2.4rem;
+  margin: 0;
+  padding-bottom: 0.4rem;
 }
 
 .read-the-docs {
-  color: #888;
+  color: #b9c2cb;
+  margin-top: 0.4rem;
+  margin-bottom: 0.8rem;
+}
+
+.card {
+  padding: 1rem;
+  margin-top: 0.8rem;
+  border-radius: 10px;
+}
+
+/* responsive */
+@media (max-width: 640px) {
+  .face-container {
+    width: 100%;
+  }
+  h1 {
+    font-size: 1.6rem;
+  }
 }
