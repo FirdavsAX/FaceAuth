@@ -2,159 +2,160 @@
 
 import React, { useState } from 'react';
 import * as faceapi from 'face-api.js';
-import './App.css'; // Keep original CSS
+import './App.css';
 import { FaceCaptureContainer } from './components/faceCapturerComponent';
 import { useFaceDetection } from './services/useFaceDetection';
 
 export default function App() {
   const [username, setUsername] = useState('');
-
-  // Use the custom hook to get all video/face logic, status, and control function
   const { videoRef, canvasRef, status, modelsLoaded, captureDescriptor } =
     useFaceDetection();
-
-  // localStatus/state for UI messages (auth/register results)
   const [localStatus, setLocalStatus] = useState('');
 
-  // --- Face Authentication Logic (Cleaned up) ---
+  const drawMatchLabel = (canvas, box, text) => {
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    // small background
+    const padding = 6;
+    const fontSize = Math.max(12, Math.round(canvas.width / 60));
+    ctx.font = `${fontSize}px sans-serif`;
+    const textWidth = ctx.measureText(text).width;
+    const tx = Math.max(4, box.x);
+    const ty = Math.max(fontSize + 8, box.y - 8);
+    ctx.fillStyle = 'rgba(2,6,23,0.7)';
+    ctx.fillRect(
+      tx - padding,
+      ty - fontSize - padding / 2,
+      textWidth + padding * 2,
+      fontSize + padding
+    );
+    ctx.fillStyle = '#bde9d8';
+    ctx.fillText(text, tx, ty);
+  };
 
   const registerFace = async () => {
     const name = username.trim();
     if (!name) {
-      alert('Enter a username before registering.');
+      setLocalStatus('Enter username to register');
+      return;
+    }
+    const capture = await captureDescriptor();
+    if (!capture) {
+      setLocalStatus('No face captured');
       return;
     }
 
-    const desc = await captureDescriptor();
-    if (!desc) {
-      alert('No face captured. Check camera and try again.');
-      return;
-    }
+    const arr = Array.from(capture.descriptor);
+    const storedRaw = JSON.parse(localStorage.getItem('faceAuthUsers') || '{}');
 
-    const arr = Array.from(desc);
-    const stored = JSON.parse(localStorage.getItem('faceAuthUsers') || '{}');
-    stored[name] = arr;
-    localStorage.setItem('faceAuthUsers', JSON.stringify(stored));
+    // ensure array of samples per user
+    if (!storedRaw[name]) storedRaw[name] = [];
+    storedRaw[name].push(arr);
+    localStorage.setItem('faceAuthUsers', JSON.stringify(storedRaw));
 
-    const msg = `Registered ${name} (${arr.length} dims)`;
-    setLocalStatus(`✅ ${msg}`);
-    alert(msg);
+    setLocalStatus(`Registered ${name} (samples: ${storedRaw[name].length})`);
     setUsername('');
+    alert(`Registered ${name}`);
   };
 
   const loginWithFace = async () => {
-    const stored = JSON.parse(localStorage.getItem('faceAuthUsers') || '{}');
-    const names = Object.keys(stored);
+    const storedRaw = JSON.parse(localStorage.getItem('faceAuthUsers') || '{}');
+    const names = Object.keys(storedRaw);
     if (names.length === 0) {
-      setLocalStatus('No registered users. Register first.');
-      alert('No registered users. Register first.');
+      setLocalStatus('No users registered');
+      alert('No users registered');
       return;
     }
 
-    const desc = await captureDescriptor();
-    if (!desc) {
-      alert('No face captured. Check camera and try again.');
+    const capture = await captureDescriptor();
+    if (!capture) {
+      setLocalStatus('No face captured');
       return;
     }
 
-    const labeledDescriptors = names.map((n) => {
-      const floats = new Float32Array(stored[n]);
-      return new faceapi.LabeledFaceDescriptors(n, [floats]);
+    // build labeled descriptors (multiple samples per user)
+    const labeled = names.map((n) => {
+      const arrs = storedRaw[n] || [];
+      const feats = arrs.map((a) => new Float32Array(a));
+      return new faceapi.LabeledFaceDescriptors(n, feats);
     });
 
-    const matcher = new faceapi.FaceMatcher(labeledDescriptors, 0.6);
-    const best = matcher.findBestMatch(desc);
+    const matcher = new faceapi.FaceMatcher(labeled, 0.6);
+    const best = matcher.findBestMatch(capture.descriptor);
 
     if (best.label === 'unknown') {
-      const msg = `No match (distance ${best.distance.toFixed(2)})`;
-      setLocalStatus(`❌ ${msg}`);
-      alert(msg);
+      setLocalStatus(`No match (distance ${best.distance.toFixed(2)})`);
+      alert('No match found');
     } else {
-      const msg = `Authenticated as ${
-        best.label
-      } (distance ${best.distance.toFixed(2)})`;
-      setLocalStatus(`✅ ${msg}`);
+      const msg = `Authenticated: ${best.label} (dist ${best.distance.toFixed(
+        2
+      )})`;
+      setLocalStatus(msg);
       alert(msg);
-      // optional: localStorage.setItem('loggedInUser', best.label);
+      // draw name on canvas near face box
+      const canvas = canvasRef.current;
+      // clear previous overlays then draw label
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        // keep existing overlay drawings from loop; add label on top
+        drawMatchLabel(canvas, capture.box, best.label);
+      }
     }
   };
 
   const clearUsers = () => {
     localStorage.removeItem('faceAuthUsers');
-    setLocalStatus('🗑 Cleared all registered users');
+    setLocalStatus('Cleared users');
+    alert('Cleared registered users');
   };
 
   return (
-    <div id='root'>
-      <h1>FaceAuth — Register and Login with Face</h1>
+    <div id='root' className='app-root'>
+      <div className='header'>
+        <h1>FaceAuth</h1>
+        <div className='status-badges'>
+          <span className={`badge ${modelsLoaded ? 'ok' : 'loading'}`}>
+            {modelsLoaded ? 'Models ready' : 'Loading models'}
+          </span>
+          <span className='badge'>Camera: {status}</span>
+        </div>
+      </div>
 
-      {/* camera / detection status (from hook) */}
-      <p className='read-the-docs' style={{ marginBottom: 4 }}>
-        Camera: {status}
-      </p>
+      {localStatus && <div className='notice'>{localStatus}</div>}
 
-      {/* auth/register status (from app actions) */}
-      {localStatus && (
-        <p className='read-the-docs' style={{ fontWeight: 600 }}>
-          {localStatus}
-        </p>
-      )}
-
-      <div
-        style={{
-          maxWidth: 760,
-          margin: '0 auto',
-          display: 'flex',
-          gap: 14,
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexWrap: 'wrap',
-        }}
-      >
+      <div className='controls'>
         <input
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           placeholder='Username for registration'
           disabled={!modelsLoaded}
-          style={{
-            padding: '10px 14px',
-            borderRadius: 8,
-            border: '1px solid rgba(255,255,255,0.1)',
-            background: 'rgba(255,255,255,0.02)',
-            color: 'inherit',
-          }}
+          className='input'
         />
         <button
           onClick={registerFace}
           disabled={!modelsLoaded}
-          style={{ padding: '10px 14px', borderRadius: 8 }}
+          className='btn primary'
         >
           Register Face
         </button>
         <button
           onClick={loginWithFace}
           disabled={!modelsLoaded}
-          style={{ padding: '10px 14px', borderRadius: 8 }}
+          className='btn'
         >
           Login with Face
         </button>
-        <button
-          onClick={clearUsers}
-          style={{ padding: '10px 14px', borderRadius: 8 }}
-        >
+        <button onClick={clearUsers} className='btn danger'>
           Clear Users
         </button>
       </div>
 
-      {/* Render the dedicated visual component */}
       <FaceCaptureContainer videoRef={videoRef} canvasRef={canvasRef} />
 
-      <div className='card'>
-        <p className='read-the-docs'>
-          <strong>Info:</strong> Models served from <code>/models</code>. Keep
-          camera steady during capture for best results.
-        </p>
-      </div>
+      <footer className='footer'>
+        Models are served from /models — this is a local demo. For production
+        use a backend, secure storage and consent.
+      </footer>
     </div>
   );
 }

@@ -14,15 +14,13 @@ export const useFaceDetection = () => {
   const [status, setStatus] = useState('Initializing...');
   const [modelsLoaded, setModelsLoaded] = useState(false);
 
-  // --- Initial Setup and Continuous Detection ---
   useEffect(() => {
     let detectInterval;
     let stream;
 
     const initFaceApi = async () => {
       try {
-        setStatus('Loading face detection models...');
-        // Load all necessary models
+        setStatus('Loading models...');
         await Promise.all([
           faceapi.nets.tinyFaceDetector.loadFromUri('/models'),
           faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
@@ -31,9 +29,8 @@ export const useFaceDetection = () => {
           faceapi.nets.ageGenderNet.loadFromUri('/models'),
         ]);
         setModelsLoaded(true);
-        setStatus('Models loaded — starting camera...');
+        setStatus('Starting camera...');
 
-        // Get video stream
         stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'user' },
         });
@@ -41,28 +38,21 @@ export const useFaceDetection = () => {
           videoRef.current.srcObject = stream;
           await videoRef.current.play();
         }
-
-        setStatus('Camera ready ✅');
+        setStatus('Camera ready');
 
         const videoEl = videoRef.current;
         const canvas = canvasRef.current;
-
         const resizeCanvas = () => {
           if (!videoEl || !canvas) return;
-          const width = videoEl.videoWidth || 640;
-          const height = videoEl.videoHeight || 480;
-          canvas.width = width;
-          canvas.height = height;
+          canvas.width = videoEl.videoWidth || videoEl.clientWidth || 640;
+          canvas.height = videoEl.videoHeight || videoEl.clientHeight || 480;
         };
-
         videoEl.addEventListener('loadedmetadata', resizeCanvas);
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
 
-        // Main detection loop for drawing
         detectInterval = setInterval(async () => {
           if (!videoEl || videoEl.paused || videoEl.ended) return;
-
           const detections = await faceapi
             .detectAllFaces(videoEl, detectorOptions)
             .withFaceLandmarks()
@@ -75,62 +65,64 @@ export const useFaceDetection = () => {
           const ctx = canvas.getContext('2d');
           ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-          // Draw detections on canvas
           faceapi.draw.drawDetections(canvas, resized);
           faceapi.draw.drawFaceLandmarks(canvas, resized);
           faceapi.draw.drawFaceExpressions(canvas, resized);
-          // faceapi.draw.draw.drawAgeAndGender(canvas, resized); // Optional: add age/gender drawing
-        }, 150); // Run detection every 150ms
+        }, 150);
       } catch (err) {
-        console.error('Face API Initialization Error:', err);
-        setStatus(
-          `❌ Error: ${err.message || 'Failed to initialize Face API.'}`
-        );
+        console.error('Face API init error', err);
+        setStatus('Error: ' + (err.message || err));
       }
     };
 
     initFaceApi();
 
-    // Cleanup function
     return () => {
       clearInterval(detectInterval);
       window.removeEventListener('resize', () => {});
       if (stream) stream.getTracks().forEach((t) => t.stop());
     };
-  }, []); // Empty dependency array means this runs only on mount/unmount
+  }, []);
 
-  // --- Capture Face Descriptor Function ---
   const captureDescriptor = useCallback(async () => {
     if (!modelsLoaded) {
-      setStatus('⚠️ Models not loaded yet');
+      setStatus('Models not loaded');
       return null;
     }
     const videoEl = videoRef.current;
-    if (!videoEl) return null;
-
-    setStatus('Capturing face — please hold still...');
-    // Detect single face with landmarks and descriptor
-    const result = await faceapi
-      .detectSingleFace(videoEl, detectorOptions)
-      .withFaceLandmarks()
-      .withFaceDescriptor();
-
-    if (!result) {
-      setStatus('No face detected. Try again.');
+    const canvas = canvasRef.current;
+    if (!videoEl || !canvas) {
+      setStatus('No video available');
       return null;
     }
 
-    setStatus('✅ Face captured successfully');
-    // Return the face descriptor (Float32Array)
-    return result.descriptor;
+    setStatus('Capturing face — hold still');
+    try {
+      const result = await faceapi
+        .detectSingleFace(videoEl, detectorOptions)
+        .withFaceLandmarks()
+        .withFaceDescriptor();
+
+      if (!result) {
+        setStatus('No face detected');
+        return null;
+      }
+
+      // Ensure canvas size matches video
+      canvas.width = videoEl.videoWidth || canvas.width;
+      canvas.height = videoEl.videoHeight || canvas.height;
+
+      setStatus('Face captured');
+      return {
+        descriptor: result.descriptor, // Float32Array
+        box: result.detection.box, // { x, y, width, height } in video coords
+      };
+    } catch (err) {
+      console.error('captureDescriptor error', err);
+      setStatus('Capture error');
+      return null;
+    }
   }, [modelsLoaded]);
 
-  // Return values for the consumer component (App.js)
-  return {
-    videoRef,
-    canvasRef,
-    status,
-    modelsLoaded,
-    captureDescriptor,
-  };
+  return { videoRef, canvasRef, status, modelsLoaded, captureDescriptor };
 };
